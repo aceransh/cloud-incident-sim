@@ -106,13 +106,23 @@ data "aws_ami" "amazon_linux_2" {
   }
 }
 
-# Create a web server
+# Create a web server and place it in our new network
 resource "aws_instance" "web_server" {
-  ami           = data.aws_ami.amazon_linux_2.id
-  instance_type = "t2.micro" # This is eligible for the AWS Free Tier
-  subnet_id = aws_subnet.public.id
+  ami                    = data.aws_ami.amazon_linux_2.id
+  instance_type          = "t2.micro" # Free Tier eligible
+  subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.web_server_sg.id]
-  key_name = aws_key_pair.cloud_sim_key.key_name
+  key_name               = aws_key_pair.cloud_sim_key.key_name
+
+  # Add this user_data block to install Docker
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo yum update -y
+              sudo yum install -y docker
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo usermod -aG docker ec2-user
+              EOF
 
   tags = {
     Name = "Cloud-Incident-Sim-Server"
