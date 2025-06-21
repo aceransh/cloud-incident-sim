@@ -118,3 +118,8 @@ resource "aws_instance" "web_server" {
     Name = "Cloud-Incident-Sim-Server"
   }
 }
+
+output "web_server_public_ip" {
+    description = "The public IP address of our EC2 instance"
+    value = aws_instance.web_server.public_ip
+}
