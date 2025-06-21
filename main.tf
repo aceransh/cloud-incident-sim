@@ -57,7 +57,13 @@ resource "aws_route_table_association" "public" {
     route_table_id = aws_route_table.public.id
 }
 
-# Security Group
+# Security
+
+resource "aws_key_pair" "cloud_sim_key" {
+    key_name = "cloud-sim-key"
+    public_key = file("~/.ssh/cloud-sim-key.pub")
+}
+
 resource "aws_security_group" "web_server_sg" {
   name        = "web-server-sg"
   description = "Allow SSH and HTTP inbound traffic"
@@ -106,6 +112,7 @@ resource "aws_instance" "web_server" {
   instance_type = "t2.micro" # This is eligible for the AWS Free Tier
   subnet_id = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.web_server_sg.id]
+  key_name = aws_key_pair.cloud_sim_key.key_name
 
   tags = {
     Name = "Cloud-Incident-Sim-Server"
