@@ -77,6 +77,14 @@ resource "aws_security_group" "web_server_sg" {
     cidr_blocks      = ["136.47.155.189/32"] # <-- IMPORTANT: REPLACE THIS
   }
 
+  ingress {
+    description = "HTTP from anywhere"
+    from_port = 80
+    to_port = 80
+    protocol = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
     egress {
     from_port        = 0
     to_port          = 0
