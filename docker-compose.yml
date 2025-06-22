@@ -5,8 +5,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    container_name: backend_orchestrator
     ports:
       - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - incident-sim-net
 
@@ -14,6 +17,7 @@ services:
     build:
       context: ./services/user_service
       dockerfile: Dockerfile
+    container_name: user_service_victim 
     ports:
       - "5001:5001"
     networks:

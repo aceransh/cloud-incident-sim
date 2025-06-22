@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+import docker
+import docker.errors
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -16,18 +18,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Docker client setup
+try:
+    client = docker.from_env()
+except docker.errors.DockerException:
+    client = None
+
 services_db = [
-    {"id": "auth-service", "name": "Authentication Service", "status": "HEALTHY"},
-    {"id": "payment-gateway", "name": "Payment Gateway", "status": "HEALTHY"},
-    {"id": "database-cluster", "name": "Database Cluster", "status": "DEGRADED"},
-    {"id": "frontend-webapp", "name": "Frontend Webapp", "status": "HEALTHY"},
-    {"id": "data-pipeline", "name": "Data Pipeline", "status": "OFFLINE"},
+    {"id": "auth-service", "name": "User Service", "status": "UNKNOWN"},
+
 ]
 
 @app.get('/')
 def read_root():
-    return {"status": "Backend is running"}
+    return {"status": "Backend Orchestrator is running"}
 
 @app.get('/api/services')
 def get_services():
     return services_db
+
+@app.post('/api/services/{service_name}/stop')
+def stop_service(service_name: str):
+    if not client:
+        raise HTTPException(status_code=500, detail="Docker Client not available")
+    
+    try:
+        # find container by name
+        container = client.containers.get(service_name)
+        container.stop()
+        return {"message": f"Successfully sent stop command to '{service_name}'"}
+    except docker.errors.DockerException:
+        raise HTTPException(status_code=404, detail=f"Container '{service_name}' not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
