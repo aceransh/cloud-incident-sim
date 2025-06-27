@@ -20,8 +20,23 @@ services:
     container_name: user_service_victim 
     ports:
       - "5001:5001"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     networks:
       - incident-sim-net
+    
+  postgres_db:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    environment:
+      - POSTGRES_DB=incident_sim_db
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    networks:
+      - incident-sim-net
+
 
 networks:
   incident-sim-net:
