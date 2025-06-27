@@ -36,7 +36,14 @@ services:
       - "5432:5432"
     networks:
       - incident-sim-net
-
+  
+  health_checker:
+    build:
+      context: ./services/health_checker
+      dockerfile: Dockerfile
+    container_name: health_checker
+    networks:
+      - incident-sim-net
 
 networks:
   incident-sim-net:
