@@ -1,5 +1,5 @@
 import docker
-import docker.errors
+from docker.errors import NotFound
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -35,7 +35,35 @@ def read_root():
 
 @app.get('/api/services')
 def get_services():
-    return services_db
+    """
+    Gets the real-time status of all configured microservices.
+    """
+    if not client:
+        raise HTTPException(status_code=500, detail="Docker client not available.")
+
+    # This is our master list of services to track
+    services_to_track = [
+        {"id": "user_service_victim", "name": "User Service"},
+    ]
+
+    live_statuses = []
+    # Loop through each service in our master list
+    for service in services_to_track:
+        container_name = service["id"]
+        try:
+            # The logic is the same, but it runs for each service
+            container = client.containers.get(container_name)
+            status = container.status.upper()
+        except NotFound:
+            status = "OFFLINE"
+        
+        live_statuses.append({
+            "id": service["id"],
+            "name": service["name"],
+            "status": status
+        })
+        
+    return live_statuses
 
 @app.post('/api/services/{service_name}/stop')
 def stop_service(service_name: str):
