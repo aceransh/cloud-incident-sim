@@ -1,9 +1,26 @@
 import docker
+import asyncio
+import random
+from contextlib import asynccontextmanager
 from docker.errors import NotFound
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    This function manages the startup and shutdown events for the application.
+    """
+    print("Application startup complete. Starting incident simulator...")
+    # Start the incident_simulator function as a background task
+    task = asyncio.create_task(incident_sim())
+    yield
+    # (Code to run on shutdown would go here, after the 'yield')
+    print("Application shutting down. Stopping incident simulator.")
+    task.cancel()
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "http://localhost",
@@ -24,10 +41,29 @@ try:
 except docker.errors.DockerException:
     client = None
 
-services_db = [
-    {"id": "auth-service", "name": "User Service", "status": "UNKNOWN"},
+# Incident Sim Logic
+async def incident_sim():
+    while True:
+        await asyncio.sleep(random.randint(30,60))
 
-]
+        if not client:
+            print("Docker client not available, skipping incident simulation.")
+            continue
+        #list of running container
+        all_containers = client.containers.list()
+        
+        victim_containers = []
+        for c in all_containers:
+            if 'victim' in c.name:
+                victim_containers.append(c)
+
+        if not victim_containers:
+            print("No victim containers are running, skipping incident.")
+            continue
+        victim = random.choice(victim_containers)
+        print(f"--- SIMULATING INCIDENT: Stopping {victim.name} ---")
+        victim.stop()
+        
 
 @app.get('/')
 def read_root():
