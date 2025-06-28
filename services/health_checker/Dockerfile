@@ -8,4 +8,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # The command to run when the container starts.
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]

@@ -6,6 +6,11 @@ from contextlib import asynccontextmanager
 from docker.errors import NotFound
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import os 
+from openai import OpenAI
+import datetime
+
+
 
 # --- Lifespan Manager (with corrected function name) ---
 @asynccontextmanager
@@ -85,36 +90,76 @@ def stop_service(service_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Log Gathering Endpoint (with corrected logic) ---
-@app.get("/api/incidents/latest/logs")
-def get_latest_incident_logs():
-    """
-    Scans the logs of all configured services and gathers them into a single dump.
-    """
-    if not client:
-        raise HTTPException(status_code=500, detail="Docker client not available.")
-    
-    # FIX: Define the list of containers we want logs from
-    services_to_log = [
-        "user_service_victim",
-        "health_checker",
-        "postgres_db",
-        "backend_orchestrator",
-    ]
-    
-    all_logs = []
-    
-    # FIX: Loop through our known list instead of filtering
-    for container_name in services_to_log:
-        try:
-            container = client.containers.get(container_name)
-            # Get last 100 log lines, decode from bytes to string
-            logs = container.logs(tail=100).decode("utf-8").strip()
-            for line in logs.split('\n'):
-                if line:
-                    all_logs.append(f"[{container.name}] {line}")
-        except NotFound:
-            all_logs.append(f"[{container_name}] [INFO] Container not running, no logs to retrieve.")
-        except Exception as e:
-            all_logs.append(f"[{container_name}] [ERROR] Could not retrieve logs: {e}")
 
-    return {"log_dump": "\n".join(all_logs)}
+@app.get("/api/incidents/latest/logs")
+def get_latest_incident_logs(lines: int = 500):
+    """
+    Return the last `lines` log entries from every container.
+    """
+    incident = {
+        "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+        "logs": {}
+    }
+
+    # list all containers (running or exited)
+    for c in client.containers.list(all=True):
+        try:
+            raw = c.logs(tail=lines, timestamps=True).decode("utf-8", errors="replace")
+        except Exception as e:
+            incident["logs"][c.name] = [f"[{c.name}] error fetching logs: {e}"]
+            continue
+
+        # split into lines and namespace by container name
+        incident["logs"][c.name] = [
+            f"[{c.name}] {line}"
+            for line in raw.splitlines()
+            if line.strip()
+        ]
+
+    return incident
+
+@app.post("/api/incidents/latest/analyze")
+def analyze_latest_logs(lines: int = 200):
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(500, "OPENAI_API_KEY not found")
+    ai_client = OpenAI(api_key=api_key)
+
+    # 1) reuse GET to fetch raw logs
+    logs_dict = get_latest_incident_logs(lines=lines)["logs"]
+
+    # 2) flatten into one dump
+    log_dump = "\n".join(
+        line
+        for container_lines in logs_dict.values()
+        for line in container_lines
+    )
+
+    # 3) guard
+    if len(log_dump.splitlines()) < 5:
+        return {"summary": "Not enough log data to analyze. Please wait for an incident."}
+
+    # 4) prompt & call
+    prompt = f"""
+    You are a Senior Site Reliability Engineer (SRE) analyzing a log stream from a 
+    multi-container application. Your task is to identify the root cause of an 
+    incident. The log stream contains messages from multiple services.
+
+    Please provide a concise, 3-sentence summary covering:
+    1. The primary service that failed.
+    2. The likely root cause of its failure, based on specific error messages.
+    3. The impact on other services (cascading failures).
+
+    Here is the log stream:
+    ---
+    {log_dump}
+    ---
+    """
+    completion = ai_client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role":"system","content":"You’re an expert…"},
+            {"role":"user","content": prompt}
+        ]
+    )
+    return {"summary": completion.choices[0].message.content}
