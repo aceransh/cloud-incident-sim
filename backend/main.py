@@ -15,12 +15,16 @@ import datetime
 # --- Lifespan Manager (with corrected function name) ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("Application startup complete. Starting incident simulator...")
-    # FIX: Corrected function name from incident_sim to incident_simulator
-    task = asyncio.create_task(incident_simulator())
+    auto = os.getenv("AUTO_SIMULATE", "true").lower() == 'true'
+    if auto:
+        print("Application startup complete. Starting incident simulator...")
+        task = asyncio.create_task(incident_simulator())
+    else:
+        print("AUTO_SIMULATE is false; skipping automatic incidents.")
     yield
-    print("Application shutting down. Stopping incident simulator.")
-    task.cancel()
+    if auto:
+        print("Application shutting down. Stopping incident simulator.")
+        task.cancel()
 
 # --- App and CORS Setup ---
 app = FastAPI(lifespan=lifespan)
@@ -89,32 +93,118 @@ def stop_service(service_name: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/services/{service_name}/start")
+def start_service(service_name: str):
+    if not client:
+        raise HTTPException(status_code=500, detail="Docker Client not available")
+    try:
+        container = client.containers.get(service_name)
+        container.start()
+        return {"message": f"Successfully sent start command to '{service_name}'"}
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"Container '{service_name}' not found.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/incidents/simulate/bad_deployment")
+def simulate_bad_deployment():
+    svc_name = "user_service_victim"
+    bad_image = "cloud-incident-sim-user_service:bad"
+    LABELS = {
+    "com.docker.compose.project": "cloud-incident-sim",
+    "com.docker.compose.service": "user_service",
+    "com.docker.compose.oneoff": "False",
+    }
+
+    try:
+        c = client.containers.get(svc_name)
+        c.stop()
+        c.remove()
+    except NotFound:
+        pass
+    
+    client.containers.run(
+        bad_image,
+        name=svc_name,
+        detach=True,
+        network="incident-sim-net",
+        ports={"5001/tcp": 5001},
+        environment={"POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", "")},
+        restart_policy={"Name": "on-failure", "MaximumRetryCount": 5},
+        labels=LABELS,
+    )
+    return {"message": "Bad deployment simulation started."}
+
+@app.post("/api/incidents/remediate/bad_deployment")
+def remediate_bad_deployment():
+    """
+    Stops any running 'bad' user_service_victim container and
+    starts it again from the known-good image.
+    """
+    svc_name = "user_service_victim"
+    good_image = "cloud-incident-sim-user_service:good"
+    LABELS = {
+    "com.docker.compose.project": "cloud-incident-sim",
+    "com.docker.compose.service": "user_service",
+    "com.docker.compose.oneoff": "False",
+    }
+
+    try:
+        c = client.containers.get(svc_name)
+        c.stop()
+        c.remove()
+    except NotFound:
+        pass
+
+    client.containers.run(
+        good_image,
+        name=svc_name,
+        detach=True,
+        network="incident-sim-net",
+        ports={"5001/tcp": 5001},
+        environment={"POSTGRES_PASSWORD": os.getenv("POSTGRES_PASSWORD", "")},
+        restart_policy={"Name": "on-failure", "MaximumRetryCount": 5},
+        labels=LABELS,
+    )
+    return {"message": "Rolled back to the good user_service_victim deployment."}
+
+
 # --- Log Gathering Endpoint (with corrected logic) ---
 
 @app.get("/api/incidents/latest/logs")
-def get_latest_incident_logs(lines: int = 500):
+def get_latest_logs(lines: int = 500):
     """
-    Return the last `lines` log entries from every container.
+    Return the last `lines` log entries from every container we explicitly care about.
     """
     incident = {
         "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
         "logs": {}
     }
 
-    # list all containers (running or exited)
-    for c in client.containers.list(all=True):
-        try:
-            raw = c.logs(tail=lines, timestamps=True).decode("utf-8", errors="replace")
-        except Exception as e:
-            incident["logs"][c.name] = [f"[{c.name}] error fetching logs: {e}"]
-            continue
+    # 1) Whitelist the exact container names you want to see
+    services_to_log = [
+        "user_service_victim",
+        "health_checker",
+        "postgres_db",
+        "backend_orchestrator",
+    ]
 
-        # split into lines and namespace by container name
-        incident["logs"][c.name] = [
-            f"[{c.name}] {line}"
-            for line in raw.splitlines()
-            if line.strip()
-        ]
+    # 2) For each name, try to fetch its logs (running or exited)
+    for name in services_to_log:
+        try:
+            c = client.containers.get(name)
+            raw = c.logs(tail=lines, timestamps=True).decode("utf-8", errors="replace")
+            # 3) Split into lines, prefix with the container name
+            incident["logs"][name] = [
+                f"[{name}] {line}"
+                for line in raw.splitlines()
+                if line.strip()
+            ]
+        except NotFound:
+            # if it’s not running/never existed, just record an empty list
+            incident["logs"][name] = []
+        except Exception as e:
+            incident["logs"][name] = [f"[{name}] [ERROR] {e}"]
 
     return incident
 
@@ -126,7 +216,7 @@ def analyze_latest_logs(lines: int = 200):
     ai_client = OpenAI(api_key=api_key)
 
     # 1) reuse GET to fetch raw logs
-    logs_dict = get_latest_incident_logs(lines=lines)["logs"]
+    logs_dict = get_latest_logs(lines=lines)["logs"]
 
     # 2) flatten into one dump
     log_dump = "\n".join(
@@ -141,14 +231,11 @@ def analyze_latest_logs(lines: int = 200):
 
     # 4) prompt & call
     prompt = f"""
-    You are a Senior Site Reliability Engineer (SRE) analyzing a log stream from a 
-    multi-container application. Your task is to identify the root cause of an 
-    incident. The log stream contains messages from multiple services.
-
-    Please provide a concise, 3-sentence summary covering:
-    1. The primary service that failed.
-    2. The likely root cause of its failure, based on specific error messages.
-    3. The impact on other services (cascading failures).
+    You are an expert Site Reliability Engineer performing root-cause analysis on a multi-container system. 
+    In exactly three sentences, please include:
+    1. When and where the failure first appeared (with timestamp and service name).
+    2. What went wrong (including the lifecycle stage, e.g. “startup”, and the specific error).
+    3. How it impacted other services and one actionable recommendation for remediation.
 
     Here is the log stream:
     ---

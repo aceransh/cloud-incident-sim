@@ -1,0 +1,18 @@
+# services/user_service/Dockerfile.bad
+
+# 1. Base Python image
+FROM python:3.11-slim-bookworm
+
+# 2. Set the working directory
+WORKDIR /app
+
+# 3. Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 4. Copy application code (but we’ll never actually run it)
+COPY main.py .
+
+# 5. Override the normal startup command with one that always fails
+#    This import does not exist and will trigger a ModuleNotFoundError
+CMD ["python", "-c", "import this_module_does_not_exist"]

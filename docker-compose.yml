@@ -6,6 +6,8 @@ services:
     container_name: backend_orchestrator
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AUTO_SIMULATE=false
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
       - "8000:8000"
     volumes:
@@ -20,6 +22,7 @@ services:
       - incident-sim-net
 
   user_service:
+    image: "cloud-incident-sim-user_service:good"
     build:
       context: ./services/user_service
       dockerfile: Dockerfile
@@ -35,6 +38,13 @@ services:
         max-file: "3"
     networks:
       - incident-sim-net
+  user_service_bad:
+    build:
+      context: ./services/user_service
+      dockerfile: Dockerfile.bad
+    image: cloud-incident-sim-user_service:bad
+    networks:
+    - incident-sim-net
     
   postgres_db:
     image: postgres:15-alpine
@@ -69,3 +79,4 @@ services:
 networks:
   incident-sim-net:
     driver: bridge
+    name: "incident-sim-net"
