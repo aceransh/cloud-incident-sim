@@ -9,7 +9,7 @@ Base = declarative_base()
 class IncidentRun(Base):
     __tablename__ = "incident_runs"
 
-    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid4()))
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     scenario_name = Column(String, nullable=False)
     started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     ended_at = Column(DateTime(timezone=True), nullable=True)

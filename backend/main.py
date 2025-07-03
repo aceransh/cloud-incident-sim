@@ -1,5 +1,5 @@
 import random
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -52,9 +52,29 @@ def simulate_incident(request: SimulationRequest):
         )
         db.add(incident_run)
         db.commit()
-        
+
     incidents.append(incident)
     return {
         "status": "Simulation triggered",
         "incident": incident
     }
+
+@app.get("/incidents")
+def get_incidents():
+    with SessionLocal() as db:
+        incidents = db.query(IncidentRun).all()
+    return incidents
+
+@app.post("/incidents/{incident_id}/complete")
+def complete_incident(incident_id: str):
+    with SessionLocal() as db:
+        incident = db.query(IncidentRun).filter(IncidentRun.id == incident_id).first()
+
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+        
+        incident.status = "Succeeded"
+        incident.ended_at = datetime.now(timezone.utc)
+        db.commit()
+    
+    return {"message": f"Incident {incident_id} marked as Succeeded"}
