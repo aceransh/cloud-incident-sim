@@ -1,3 +1,4 @@
+import random
 from fastapi import FastAPI
 from pydantic import BaseModel
 from uuid import uuid4
@@ -5,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from models import Base
 
 
 # Create FastAPI app instance
@@ -15,8 +17,7 @@ SQLALCHEMY_DATABASE_URL = "sqlite:///./incident_runs.db"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
+Base.metadata.create_all(bind=engine)
 # Store simulated incidents in-memory
 incidents = []
 
