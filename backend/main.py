@@ -1,5 +1,8 @@
+import json
+import os
 import random
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -75,6 +78,41 @@ def complete_incident(incident_id: str):
         
         incident.status = "Succeeded"
         incident.ended_at = datetime.now(timezone.utc)
+
+        os.makedirs("reports", exist_ok=True)
+
+        report_data = {
+            "id": incident.id,
+            "scenario_name": incident.scenario_name,
+            "started_at": incident.started_at.isoformat(),
+            "ended_at": incident.ended_at.isoformat(),
+            "status": incident.status,
+            "logs": incident.logs,
+            "report_path": f"reports/run_{incident.id}.json"
+        }
+
+        with open(report_data["report_path"], 'w') as f:
+            json.dump(report_data, f, indent=2)
+        
+        incident.report_s3 = report_data["report_path"]
+
         db.commit()
     
     return {"message": f"Incident {incident_id} marked as Succeeded"}
+
+@app.get("/incidents/{incident_id}/report")
+def download_report(incident_id: str):
+    with SessionLocal() as db:
+        incident = db.query(IncidentRun).filter(IncidentRun.id == incident_id).first()
+
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+
+        if not incident.report_s3 or not os.path.exists(incident.report_s3):
+            raise HTTPException(status_code=404, detail="Report file not found")
+
+        return FileResponse(
+            path=incident.report_s3,
+            media_type="application/json",
+            filename=os.path.basename(incident.report_s3)
+        )
