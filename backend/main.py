@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, String, DateTime, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from models import Base
+from models import Base, IncidentRun
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 
 
 # Create FastAPI app instance
@@ -15,7 +17,7 @@ app = FastAPI()
 # SQLAlchemy setup (SQLite for local dev)
 SQLALCHEMY_DATABASE_URL = "sqlite:///./incident_runs.db"
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(SQLALCHEMY_DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
 # Store simulated incidents in-memory
@@ -39,6 +41,18 @@ def simulate_incident(request: SimulationRequest):
         "severity": request.severity,
         "impacted_service": random.choice(["EC2", "S3", "RDS", "Lambda"])
     }
+        # Save to DB
+    with SessionLocal() as db:
+        incident_run = IncidentRun(
+            id=incident["id"],
+            scenario_name=incident["type"],
+            started_at=datetime.now(timezone.utc),
+            status="Triggered",
+            logs={"impacted_service": incident["impacted_service"]},
+        )
+        db.add(incident_run)
+        db.commit()
+        
     incidents.append(incident)
     return {
         "status": "Simulation triggered",
