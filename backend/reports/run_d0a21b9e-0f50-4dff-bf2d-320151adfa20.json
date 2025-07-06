@@ -1,0 +1,11 @@
+{
+  "id": "d0a21b9e-0f50-4dff-bf2d-320151adfa20",
+  "scenario_name": "Network",
+  "started_at": "2025-07-06T21:42:31.043665",
+  "ended_at": "2025-07-06T21:42:36.060828+00:00",
+  "status": "Succeeded",
+  "logs": {
+    "impacted_service": "Lambda"
+  },
+  "report_path": "reports/run_d0a21b9e-0f50-4dff-bf2d-320151adfa20.json"
+}

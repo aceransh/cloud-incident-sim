@@ -1,7 +1,8 @@
 import json
 import os
 import random
-from fastapi import FastAPI, HTTPException
+import time
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from uuid import uuid4
@@ -28,7 +29,44 @@ incidents = []
 
 class SimulationRequest(BaseModel):
     type: str
-    severity: str
+
+def run_fake_chaos(incident_id: str):
+    """
+    Pretend to run a chaos experiment for a few seconds,
+    then mark the incident as complete and generate the report.
+    
+    Parameters:
+    ----------
+    incident_id : str
+        The UUID of the incident to update.
+    """
+    time.sleep(5)
+
+    with SessionLocal() as db:
+        incident = db.query(IncidentRun).filter(IncidentRun.id == incident_id).first()
+
+        if incident:
+            incident.status = "Succeeded"
+            incident.ended_at = datetime.now(timezone.utc)
+
+            os.makedirs("reports", exist_ok=True)
+
+            report_data = {
+                "id": incident.id,
+                "scenario_name": incident.scenario_name,
+                "started_at": incident.started_at.isoformat(),
+                "ended_at": incident.ended_at.isoformat(),
+                "status": incident.status,
+                "logs": incident.logs,
+                "report_path": f"reports/run_{incident.id}.json"
+            }
+
+            with open(report_data["report_path"], 'w') as f:
+                json.dump(report_data, f, indent=2)
+            
+            incident.report_s3 = report_data["report_path"]
+
+            db.commit()
 
 # Simple root endpoint
 @app.get("/")
@@ -36,13 +74,14 @@ def read_root():
     return {"message": "Hello, CloudIncidentSim!"}
 
 @app.post("/simulate")
-def simulate_incident(request: SimulationRequest):
+def simulate_incident(request: SimulationRequest, background_tasks: BackgroundTasks):
+    incident_id = str(uuid4())
+    impacted_service = random.choice(["EC2", "S3", "RDS", "Lambda"])
     incident = {
-        "id": str(uuid4()),
+        "id": incident_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "type": request.type,
-        "severity": request.severity,
-        "impacted_service": random.choice(["EC2", "S3", "RDS", "Lambda"])
+        "impacted_service": impacted_service
     }
         # Save to DB
     with SessionLocal() as db:
@@ -57,6 +96,9 @@ def simulate_incident(request: SimulationRequest):
         db.commit()
 
     incidents.append(incident)
+
+    background_tasks.add_task(run_fake_chaos, incident_id)
+
     return {
         "status": "Simulation triggered",
         "incident": incident

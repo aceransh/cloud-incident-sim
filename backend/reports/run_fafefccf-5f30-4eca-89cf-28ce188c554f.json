@@ -1,0 +1,11 @@
+{
+  "id": "fafefccf-5f30-4eca-89cf-28ce188c554f",
+  "scenario_name": "Database",
+  "started_at": "2025-07-06T21:48:40.759786",
+  "ended_at": "2025-07-06T21:48:45.776192+00:00",
+  "status": "Succeeded",
+  "logs": {
+    "impacted_service": "EC2"
+  },
+  "report_path": "reports/run_fafefccf-5f30-4eca-89cf-28ce188c554f.json"
+}
