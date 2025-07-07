@@ -158,3 +158,36 @@ def download_report(incident_id: str):
             media_type="application/json",
             filename=os.path.basename(incident.report_s3)
         )
+    
+@app.get("/incidents/{incident_id}")
+def get_incident(incident_id: str):
+    with SessionLocal() as db:
+        incident = db.query(IncidentRun).filter(IncidentRun.id == incident_id).first()
+
+        if not incident:
+            raise HTTPException(status_code=404, detail="Incident not found")
+
+        return {
+            "id": incident.id,
+            "scenario_name": incident.scenario_name,
+            "started_at": incident.started_at.isoformat(),
+            "ended_at": incident.ended_at.isoformat() if incident.ended_at else None,
+            "status": incident.status,
+            "logs": incident.logs,
+            "report_path": incident.report_s3
+        }
+
+@app.delete("/incidents/{incident_id}")
+def del_incident(incident_id: str):
+    with SessionLocal() as db:
+        incident = db.query(IncidentRun).filter(IncidentRun.id == incident_id).first()
+        
+        #Remove report file if it exists
+        if incident.report_s3 and os.path.exists(incident.report_s3):
+            os.remove(incident.report_s3)
+
+        #delete from db as well
+        db.delete(incident)
+        db.commit()
+    
+    return {"message": f"Incident {incident_id} deleted successfully"}
