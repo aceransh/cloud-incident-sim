@@ -30,6 +30,10 @@ incidents = []
 class SimulationRequest(BaseModel):
     type: str
 
+class UpdateIncidentRequest(BaseModel):
+    status: str | None = None
+    logs: dict | None = None
+
 def run_fake_chaos(incident_id: str):
     """
     Pretend to run a chaos experiment for a few seconds,
@@ -191,3 +195,21 @@ def del_incident(incident_id: str):
         db.commit()
     
     return {"message": f"Incident {incident_id} deleted successfully"}
+
+@app.patch("/incidents/{incident_id}")
+def update_incident(incident_id: str, request: UpdateIncidentRequest):
+    with SessionLocal() as db:
+        incident = db.query(IncidentRun).filter(IncidentRun.id == incident_id).first()
+
+        if not incident:
+           raise HTTPException(status_code=404, detail="Incident not found") 
+        
+        if request.status is not None:
+            incident.status = request.status
+
+        if request.logs is not None:
+            incident.logs = request.logs
+        
+        db.commit()
+    
+    return {"message": f"Incident {incident_id} updated successfully"}
